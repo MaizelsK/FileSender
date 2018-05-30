@@ -20,12 +20,12 @@ namespace TCPClient
             {
                 while (true)
                 {
-                    string filePath = SendMetadata();
+                    TcpClient tcpClient = new TcpClient();
+                    tcpClient.Connect(new IPEndPoint(IPAddress.Parse("127.0.0.1"), defaultPort));
 
-                    if (String.IsNullOrWhiteSpace(filePath))
-                        continue;
+                    SendFile(tcpClient);
 
-                    SendFile(filePath);
+                    tcpClient.Close();
                 }
             }
             catch (SocketException ex)
@@ -35,48 +35,50 @@ namespace TCPClient
             }
         }
 
-        public static string SendMetadata()
+        public static Metadata GetMetadata()
         {
-            TcpClient tcpClient = new TcpClient();
-            tcpClient.Connect(new IPEndPoint(IPAddress.Parse("127.0.0.1"), defaultPort));
+            string filePath;
 
-            Console.Clear();
-            Console.Write("Укажите путь к файлу: ");
+            while (true)
+            {
+                Console.Clear();
+                Console.Write("Укажите путь к файлу: ");
 
-            string filePath = Console.ReadLine();
-
-            if (String.IsNullOrWhiteSpace(filePath))
-                return "";
+                filePath = Console.ReadLine();
+                if (File.Exists(filePath))
+                    break;
+            }
 
             FileInfo fileInfo = new FileInfo(filePath);
 
-            Metadata metadata = new Metadata { FileName = fileInfo.Name, FileSize = fileInfo.Length };
-            string jsonData = JsonConvert.SerializeObject(metadata);
+            Metadata metadata = new Metadata { FileName = fileInfo.Name, FileSize = fileInfo.Length, FilePath = filePath };
 
-            tcpClient.Client.Send(Encoding.UTF8.GetBytes(jsonData));
-            tcpClient.Close();
-
-            return filePath;
+            return metadata;
         }
 
-        private static void SendFile(string filePath)
+        private static void SendFile(TcpClient client)
         {
-            TcpClient tcpClient = new TcpClient();
-            tcpClient.Connect(new IPEndPoint(IPAddress.Parse("127.0.0.1"), defaultPort));
+            Metadata metadata = GetMetadata();
 
-            try
+            byte[] data = new byte[metadata.FileSize + 513];
+
+            // Вставка метаданных в начало массива всех данных
+            byte[] metadataJson = Encoding.Default.GetBytes(JsonConvert.SerializeObject(metadata));
+            Array.Resize(ref metadataJson, 512);
+            Array.Copy(metadataJson, data, 512);
+
+            byte[] fileData;
+            using (FileStream fs = File.OpenRead(metadata.FilePath))
             {
-                tcpClient.Client.SendFile(filePath);
+                fileData = new byte[metadata.FileSize];
+                fs.Read(fileData, 0, (int)metadata.FileSize);
             }
-            catch (FileNotFoundException ex)
-            {
-                Console.WriteLine(ex.Message);
-                tcpClient.Close();
-                return;
-            }
+
+            Array.Copy(fileData, 0, data, 512, fileData.Length);
+
+            client.Client.Send(data);
 
             Console.WriteLine("Файл успешно отправлен");
-            tcpClient.Close();
         }
     }
 }

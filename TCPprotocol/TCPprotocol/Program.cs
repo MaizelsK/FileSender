@@ -7,6 +7,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using System.Threading;
 
 namespace TCPprotocol
 {
@@ -26,7 +27,9 @@ namespace TCPprotocol
 
                 while (true)
                 {
-                    GetClientData(server);
+                    TcpClient client = server.AcceptTcpClient();
+
+                    GetClientData(client);
                 }
             }
             catch (SocketException ex)
@@ -39,68 +42,47 @@ namespace TCPprotocol
             }
         }
 
-        public static async void GetClientData(TcpListener server)
+        public static async void GetClientData(TcpClient client)
         {
-            Metadata metadata = await GetMetadata(server);
+            await Task.Run(() => { GetMetadata(client); });
 
-            SaveFile(server, metadata);
+            client.Close();
         }
 
-        private static Task<Metadata> GetMetadata(TcpListener server)
+        private static void GetMetadata(TcpClient client)
         {
-            return Task.Run(() =>
+            int bytes;
+            byte[] metadataBytes = new byte[512];
+            Metadata metadata;
+
+            using (var networkStream = client.GetStream())
             {
-                TcpClient client = server.AcceptTcpClient();
+                Console.WriteLine("Получение данных...");
 
-                Console.WriteLine("Входщее соеденение для получения метаданных...");
-
-                int bytes;
-                byte[] data = new byte[1024];
-
-                StringBuilder builder = new StringBuilder();
-                Metadata metadata;
-
-                using (var networkStream = client.GetStream())
+                if (networkStream.DataAvailable)
                 {
-                    do
-                    {
-                        bytes = networkStream.Read(data, 0, data.Length);
-                    }
-                    while (networkStream.DataAvailable);
+                    bytes = networkStream.Read(metadataBytes, 0, 512);
 
-                    string json = Encoding.UTF8.GetString(data);
+                    string metadataJson = Encoding.Default.GetString(metadataBytes);
+                    metadata = JsonConvert.DeserializeObject<Metadata>(metadataJson);
 
-                    metadata = JsonConvert.DeserializeObject<Metadata>(Encoding.UTF8.GetString(data));
+                    byte[] fileData = new byte[metadata.FileSize];
+                    bytes = networkStream.Read(fileData, 0, (int)metadata.FileSize);
+
+                    SaveFile(metadata, fileData);
                 }
-
-                client.Close();
-                return metadata;
-            });
+            }
         }
 
-        private static void SaveFile(TcpListener server, Metadata metadata)
+        private static void SaveFile(Metadata metadata, byte[] fileData)
         {
             Task.Run(() =>
             {
-                TcpClient client = server.AcceptTcpClient();
+                Console.WriteLine("Сохранение файла...");
 
-                Console.WriteLine("Входщее соеденение для получения файла...");
+                File.WriteAllBytes(Directory.GetCurrentDirectory() + "\\" + metadata.FileName, fileData);
 
-                int bytes;
-                byte[] data = new byte[metadata.FileSize];
-
-                using (var networkStream = client.GetStream())
-                {
-                    do
-                    {
-                        bytes = networkStream.Read(data, 0, data.Length);
-                    }
-                    while (networkStream.DataAvailable);
-
-                    File.WriteAllBytes(Directory.GetCurrentDirectory() + "\\" + metadata.FileName, data);
-                }
-
-                client.Close();
+                Console.WriteLine("Файл успешно сохранен");
             });
         }
     }
