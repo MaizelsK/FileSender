@@ -74,7 +74,7 @@ namespace TCPClient
                 fs.Read(fileData, 0, (int)metadata.FileSize);
             }
 
-            Array.Copy(fileData, 0, data, 512, fileData.Length);
+            Array.Copy(fileData, 0, data, 513, fileData.Length);
 
             client.Client.Send(data);
 

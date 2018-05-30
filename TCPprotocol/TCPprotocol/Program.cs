@@ -45,8 +45,6 @@ namespace TCPprotocol
         public static async void GetClientData(TcpClient client)
         {
             await Task.Run(() => { GetMetadata(client); });
-
-            client.Close();
         }
 
         private static void GetMetadata(TcpClient client)
@@ -57,32 +55,37 @@ namespace TCPprotocol
 
             using (var networkStream = client.GetStream())
             {
+                Console.Clear();
                 Console.WriteLine("Получение данных...");
 
-                if (networkStream.DataAvailable)
-                {
-                    bytes = networkStream.Read(metadataBytes, 0, 512);
+                bytes = networkStream.Read(metadataBytes, 0, 512);
 
-                    string metadataJson = Encoding.Default.GetString(metadataBytes);
-                    metadata = JsonConvert.DeserializeObject<Metadata>(metadataJson);
+                string metadataJson = Encoding.Default.GetString(metadataBytes);
+                metadata = JsonConvert.DeserializeObject<Metadata>(metadataJson);
 
-                    byte[] fileData = new byte[metadata.FileSize];
-                    bytes = networkStream.Read(fileData, 0, (int)metadata.FileSize);
+                byte[] fileData = new byte[metadata.FileSize];
+                
+                bytes = networkStream.Read(fileData, 0, (int)metadata.FileSize);
 
-                    SaveFile(metadata, fileData);
-                }
+                SaveFile(metadata, fileData, client);
             }
         }
 
-        private static void SaveFile(Metadata metadata, byte[] fileData)
+        private static void SaveFile(Metadata metadata, byte[] fileData, TcpClient client)
         {
             Task.Run(() =>
             {
+                string savedFilesPath = Directory.GetCurrentDirectory() + "\\Saved Files";
+                Directory.CreateDirectory(savedFilesPath);
+
                 Console.WriteLine("Сохранение файла...");
 
-                File.WriteAllBytes(Directory.GetCurrentDirectory() + "\\" + metadata.FileName, fileData);
+                File.WriteAllBytes(savedFilesPath + "\\" + metadata.FileName, fileData);
 
                 Console.WriteLine("Файл успешно сохранен");
+
+                // Закрытие соеденения после всех выполненных действий
+                client.Close();
             });
         }
     }
