@@ -22,13 +22,11 @@ namespace TCPprotocol
             try
             {
                 server.Start();
-
                 Console.WriteLine("Сервер запущен и ждет подключения...");
 
                 while (true)
                 {
                     TcpClient client = server.AcceptTcpClient();
-
                     GetClientData(client);
                 }
             }
@@ -44,12 +42,15 @@ namespace TCPprotocol
 
         public static async void GetClientData(TcpClient client)
         {
-            await Task.Run(() => { GetMetadata(client); });
+            await Task.Run(() => { GetData(client); });
         }
 
-        private static void GetMetadata(TcpClient client)
+        private static void GetData(TcpClient client)
         {
-            int bytes;
+            int bytesRead;
+            int bufferSize = 1024;
+            int allBytesRead = 0;
+
             byte[] metadataBytes = new byte[512];
             Metadata metadata;
 
@@ -58,14 +59,24 @@ namespace TCPprotocol
                 Console.Clear();
                 Console.WriteLine("Получение данных...");
 
-                bytes = networkStream.Read(metadataBytes, 0, 512);
+                bytesRead = networkStream.Read(metadataBytes, 0, 512);
 
+                // Получения метаданных из первых 512 байт
                 string metadataJson = Encoding.Default.GetString(metadataBytes);
                 metadata = JsonConvert.DeserializeObject<Metadata>(metadataJson);
 
                 byte[] fileData = new byte[metadata.FileSize];
-                
-                bytes = networkStream.Read(fileData, 0, (int)metadata.FileSize);
+                int bytesLeft = (int)metadata.FileSize;
+
+                // Получения самого файла пакетами в 1024 байта
+                while (bytesLeft > 0)
+                {
+                    int nextPacketSize = (bytesLeft > bufferSize) ? bufferSize : bytesLeft;
+
+                    bytesRead = networkStream.Read(fileData, allBytesRead, nextPacketSize);
+                    allBytesRead += bytesRead;
+                    bytesLeft -= bytesRead;
+                }
 
                 SaveFile(metadata, fileData, client);
             }
@@ -82,7 +93,7 @@ namespace TCPprotocol
 
                 File.WriteAllBytes(savedFilesPath + "\\" + metadata.FileName, fileData);
 
-                Console.WriteLine("Файл успешно сохранен");
+                Console.WriteLine("Файл " + metadata.FileName + " успешно сохранен");
 
                 // Закрытие соеденения после всех выполненных действий
                 client.Close();

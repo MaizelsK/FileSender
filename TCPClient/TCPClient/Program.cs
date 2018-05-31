@@ -18,6 +18,7 @@ namespace TCPClient
         {
             try
             {
+
                 while (true)
                 {
                     TcpClient tcpClient = new TcpClient();
@@ -60,7 +61,7 @@ namespace TCPClient
         {
             Metadata metadata = GetMetadata();
 
-            byte[] data = new byte[metadata.FileSize + 513];
+            byte[] data = new byte[metadata.FileSize + 512];
 
             // Вставка метаданных в начало массива всех данных
             byte[] metadataJson = Encoding.Default.GetBytes(JsonConvert.SerializeObject(metadata));
@@ -74,11 +75,28 @@ namespace TCPClient
                 fs.Read(fileData, 0, (int)metadata.FileSize);
             }
 
-            Array.Copy(fileData, 0, data, 513, fileData.Length);
+            Array.Copy(fileData, 0, data, 512, fileData.Length);
 
-            client.Client.Send(data);
+            int bufferSize = 1024;
+            int bytesSent = 0;
+            int bytesLeft = data.Length;
+
+            using (NetworkStream networkStream = client.GetStream())
+            {
+                while (bytesLeft > 0)
+                {
+
+                    int nextPacketSize = (bytesLeft > bufferSize) ? bufferSize : bytesLeft;
+
+                    networkStream.Write(data, bytesSent, nextPacketSize);
+                    bytesSent += nextPacketSize;
+                    bytesLeft -= nextPacketSize;
+
+                }
+            }
 
             Console.WriteLine("Файл успешно отправлен");
+            Console.ReadLine();
         }
     }
 }
